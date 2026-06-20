@@ -59,7 +59,7 @@ interface ConnectMessage {
   password?: string;
   privateKey?: string;
   passphrase?: string;
-  mode: 'essh' | 'direct'; // HTTPS转ESSH / SSH直连
+  mode: 'https-ssh' | 'direct'; // HTTPS转SSH / SSH直连
 }
 
 // 终端输入
@@ -148,7 +148,7 @@ interface ConnectionHistory {
   port: number;
   username: string;
   authType: 'password' | 'key';
-  mode: 'essh' | 'direct';
+  mode: 'https-ssh' | 'direct';
   label?: string;
   lastConnected: number; // timestamp
 }
