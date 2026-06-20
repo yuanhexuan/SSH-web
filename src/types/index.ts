@@ -34,7 +34,7 @@ export interface FileEntry {
 }
 
 export type WSMessageType =
-  | 'ssh-connect' | 'ssh-connected' | 'ssh-error'
+  | 'ssh-connect' | 'ssh-connected' | 'ssh-error' | 'ssh-disconnected'
   | 'terminal-input' | 'terminal-output' | 'terminal-resize'
   | 'file-operation' | 'file-result'
   | 'ssh-disconnect';

@@ -30,7 +30,18 @@ export default function Connect() {
   useEffect(() => {
     wsConnect();
     return () => { disconnect(); };
-  }, [wsConnect, disconnect]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-connect WebSocket and handle connection state
+  const [wsReady, setWsReady] = useState(false);
+
+  useEffect(() => {
+    if (isConnected) {
+      setWsReady(true);
+    } else {
+      setWsReady(false);
+    }
+  }, [isConnected]);
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -47,6 +58,11 @@ export default function Connect() {
 
   const handleConnect = useCallback(() => {
     setError('');
+    if (!isConnected) {
+      setError('WebSocket 未连接，请等待连接建立后重试');
+      wsConnect();
+      return;
+    }
     if (!host.trim() || !username.trim()) {
       setError('请填写主机和用户名');
       return;
@@ -87,10 +103,15 @@ export default function Connect() {
       passphrase: config.passphrase,
       mode: config.mode,
     });
-  }, [host, port, username, authType, password, privateKey, passphrase, mode, addConnection, addSession, addHistory, send]);
+  }, [host, port, username, authType, password, privateKey, passphrase, mode, isConnected, wsConnect, addConnection, addSession, addHistory, send]);
 
   const handleHistoryConnect = useCallback((h: typeof connectionHistory[0]) => {
     setError('');
+    if (!isConnected) {
+      setError('WebSocket 未连接，请等待连接建立后重试');
+      wsConnect();
+      return;
+    }
     setConnecting(true);
     const sessionId = crypto.randomUUID();
     const config: ConnectionConfig = {
@@ -113,7 +134,7 @@ export default function Connect() {
       authType: h.authType,
       mode: h.mode,
     });
-  }, [addConnection, addSession, addHistory, send]);
+  }, [isConnected, wsConnect, addConnection, addSession, addHistory, send]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();

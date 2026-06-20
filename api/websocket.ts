@@ -55,8 +55,12 @@ interface SSHDisconnectMessage extends WSMessage {
 export function setupWebSocket(server: http.Server): void {
   const wss = new WebSocketServer({ server, path: '/ws' })
 
+  // Track sessions per WebSocket connection
+  const wsSessions = new WeakMap<WebSocket, Set<string>>()
+
   wss.on('connection', (ws: WebSocket) => {
     console.log('WebSocket client connected')
+    wsSessions.set(ws, new Set())
 
     ws.on('message', async (raw: Buffer) => {
       let message: WSMessage
@@ -69,7 +73,7 @@ export function setupWebSocket(server: http.Server): void {
 
       switch (message.type) {
         case 'ssh-connect':
-          await handleSSHConnect(ws, message as SSHConnectMessage)
+          await handleSSHConnect(ws, message as SSHConnectMessage, wsSessions)
           break
         case 'terminal-input':
           handleTerminalInput(ws, message as TerminalInputMessage)
@@ -90,6 +94,13 @@ export function setupWebSocket(server: http.Server): void {
 
     ws.on('close', () => {
       console.log('WebSocket client disconnected')
+      // Clean up all SSH sessions for this connection
+      const sessions = wsSessions.get(ws)
+      if (sessions) {
+        for (const sessionId of sessions) {
+          sshService.disconnect(sessionId)
+        }
+      }
     })
 
     ws.on('error', (err) => {
@@ -98,8 +109,14 @@ export function setupWebSocket(server: http.Server): void {
   })
 }
 
-async function handleSSHConnect(ws: WebSocket, message: SSHConnectMessage): Promise<void> {
+async function handleSSHConnect(ws: WebSocket, message: SSHConnectMessage, wsSessions: WeakMap<WebSocket, Set<string>>): Promise<void> {
   const { sessionId, cols, rows } = message
+
+  // Track session for this WebSocket connection
+  const sessions = wsSessions.get(ws)
+  if (sessions) {
+    sessions.add(sessionId)
+  }
 
   const config: SSHConfig = {
     host: message.host,
@@ -131,17 +148,25 @@ async function handleSSHConnect(ws: WebSocket, message: SSHConnectMessage): Prom
         sshService.setStream(sessionId, stream)
 
         stream.on('data', (data: Buffer) => {
-          ws.send(JSON.stringify({ type: 'terminal-output', sessionId, data: data.toString('utf-8') }))
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'terminal-output', sessionId, data: data.toString('base64') }))
+          }
         })
 
         stream.on('close', () => {
-          ws.send(JSON.stringify({ type: 'ssh-disconnected', sessionId }))
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ssh-disconnected', sessionId }))
+          }
           sshService.disconnect(sessionId)
         })
 
-        stream.stderr.on('data', (data: Buffer) => {
-          ws.send(JSON.stringify({ type: 'terminal-output', sessionId, data: data.toString('utf-8') }))
-        })
+        if (stream.stderr) {
+          stream.stderr.on('data', (data: Buffer) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'terminal-output', sessionId, data: data.toString('base64') }))
+            }
+          })
+        }
 
         ws.send(JSON.stringify({ type: 'ssh-connected', sessionId }))
       }

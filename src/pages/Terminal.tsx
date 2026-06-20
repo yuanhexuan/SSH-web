@@ -119,12 +119,17 @@ export default function TerminalPage() {
   useEffect(() => {
     if (!lastMessage || !xtermRef.current) return;
     if (lastMessage.type === 'terminal-output' && lastMessage.sessionId === sessionId) {
-      xtermRef.current.write(lastMessage.data || '');
+      try {
+        const decoded = atob(lastMessage.data || '');
+        xtermRef.current.write(decoded);
+      } catch {
+        xtermRef.current.write(lastMessage.data || '');
+      }
     }
     if (lastMessage.type === 'ssh-error' && lastMessage.sessionId === sessionId) {
       xtermRef.current.write(`\r\n\x1b[31m连接错误: ${lastMessage.message || lastMessage.error || '未知错误'}\x1b[0m\r\n`);
     }
-    if (lastMessage.type === 'ssh-disconnect' && lastMessage.sessionId === sessionId) {
+    if (lastMessage.type === 'ssh-disconnected' && lastMessage.sessionId === sessionId) {
       xtermRef.current.write('\r\n\x1b[33m连接已断开\x1b[0m\r\n');
     }
   }, [lastMessage, sessionId]);
