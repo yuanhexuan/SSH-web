@@ -22,6 +22,8 @@ export default function Connect() {
   const [error, setError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const keyInputRef = useRef<HTMLInputElement>(null);
+  const pendingSessionRef = useRef<string | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadHistory();
@@ -29,37 +31,37 @@ export default function Connect() {
 
   useEffect(() => {
     wsConnect();
-    return () => { disconnect(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-connect WebSocket and handle connection state
-  const [wsReady, setWsReady] = useState(false);
-
-  useEffect(() => {
-    if (isConnected) {
-      setWsReady(true);
-    } else {
-      setWsReady(false);
-    }
-  }, [isConnected]);
-
+  // Handle WebSocket responses
   useEffect(() => {
     if (!lastMessage) return;
+
     if (lastMessage.type === 'ssh-connected') {
-      setConnecting(false);
       const sid = lastMessage.sessionId;
-      if (sid) navigate(`/terminal/${sid}`);
+      if (sid === pendingSessionRef.current) {
+        setConnecting(false);
+        pendingSessionRef.current = null;
+        if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+        navigate(`/terminal/${sid}`);
+      }
     }
+
     if (lastMessage.type === 'ssh-error') {
-      setConnecting(false);
-      setError(lastMessage.message || lastMessage.error || '连接失败');
+      const sid = lastMessage.sessionId;
+      if (sid === pendingSessionRef.current || !pendingSessionRef.current) {
+        setConnecting(false);
+        pendingSessionRef.current = null;
+        if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+        setError(lastMessage.message || lastMessage.error || '连接失败');
+      }
     }
   }, [lastMessage, navigate]);
 
   const handleConnect = useCallback(() => {
     setError('');
     if (!isConnected) {
-      setError('WebSocket 未连接，请等待连接建立后重试');
+      setError('WebSocket 未连接，正在尝试重新连接...');
       wsConnect();
       return;
     }
@@ -77,6 +79,18 @@ export default function Connect() {
     }
     setConnecting(true);
     const sessionId = crypto.randomUUID();
+    pendingSessionRef.current = sessionId;
+
+    // Set timeout for connection
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      if (pendingSessionRef.current === sessionId) {
+        setConnecting(false);
+        pendingSessionRef.current = null;
+        setError('连接超时，请检查主机地址和端口是否正确，以及网络是否可达');
+      }
+    }, 20000);
+
     const config: ConnectionConfig = {
       sessionId,
       host: host.trim(),
@@ -108,12 +122,23 @@ export default function Connect() {
   const handleHistoryConnect = useCallback((h: typeof connectionHistory[0]) => {
     setError('');
     if (!isConnected) {
-      setError('WebSocket 未连接，请等待连接建立后重试');
+      setError('WebSocket 未连接，正在尝试重新连接...');
       wsConnect();
       return;
     }
     setConnecting(true);
     const sessionId = crypto.randomUUID();
+    pendingSessionRef.current = sessionId;
+
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      if (pendingSessionRef.current === sessionId) {
+        setConnecting(false);
+        pendingSessionRef.current = null;
+        setError('连接超时，请检查主机地址和端口是否正确，以及网络是否可达');
+      }
+    }, 20000);
+
     const config: ConnectionConfig = {
       sessionId,
       host: h.host,

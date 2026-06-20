@@ -16,6 +16,8 @@ interface SSHConnection {
   stream: ClientChannel | null
 }
 
+const CONNECTION_TIMEOUT = 15000
+
 class SSHService {
   private connections: Map<string, SSHConnection> = new Map()
 
@@ -27,6 +29,8 @@ class SSHService {
         host: config.host,
         port: config.port,
         username: config.username,
+        readyTimeout: CONNECTION_TIMEOUT,
+        connectTimeout: CONNECTION_TIMEOUT,
       }
 
       if (config.authType === 'password') {
@@ -38,15 +42,44 @@ class SSHService {
         }
       }
 
+      let settled = false
+
+      const timeout = setTimeout(() => {
+        if (!settled) {
+          settled = true
+          client.end()
+          reject(new Error(`连接超时: 无法在 ${CONNECTION_TIMEOUT / 1000} 秒内连接到 ${config.host}:${config.port}`))
+        }
+      }, CONNECTION_TIMEOUT + 2000)
+
       client.on('ready', () => {
-        this.connections.set(sessionId, { client, stream: null })
-        resolve(client)
+        if (!settled) {
+          settled = true
+          clearTimeout(timeout)
+          this.connections.set(sessionId, { client, stream: null })
+          console.log(`SSH connected: ${config.username}@${config.host}:${config.port} [${sessionId}]`)
+          resolve(client)
+        }
       })
 
       client.on('error', (err) => {
-        reject(err)
+        if (!settled) {
+          settled = true
+          clearTimeout(timeout)
+          console.error(`SSH error for ${sessionId}:`, err.message)
+          reject(err)
+        }
       })
 
+      client.on('close', () => {
+        if (!settled) {
+          settled = true
+          clearTimeout(timeout)
+          reject(new Error('SSH 连接已关闭'))
+        }
+      })
+
+      console.log(`SSH connecting: ${config.username}@${config.host}:${config.port} [${sessionId}]`)
       client.connect(connectConfig)
     })
   }
@@ -70,6 +103,7 @@ class SSHService {
       }
       conn.client.end()
       this.connections.delete(sessionId)
+      console.log(`SSH disconnected: [${sessionId}]`)
     }
   }
 

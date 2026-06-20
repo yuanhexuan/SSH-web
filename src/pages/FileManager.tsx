@@ -25,8 +25,7 @@ export default function FileManager() {
 
   useEffect(() => {
     wsConnect();
-    return () => { disconnect(); };
-  }, [wsConnect, disconnect]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Request file list on mount and path change
   useEffect(() => {

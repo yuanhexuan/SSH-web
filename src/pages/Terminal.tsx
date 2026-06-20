@@ -22,8 +22,7 @@ export default function TerminalPage() {
 
   useEffect(() => {
     wsConnect();
-    return () => { disconnect(); };
-  }, [wsConnect, disconnect]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize xterm.js
   useEffect(() => {
